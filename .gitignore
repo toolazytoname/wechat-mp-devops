@@ -1,0 +1,39 @@
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Editors
+.idea/
+.vscode/
+*.iml
+*.sublime-project
+*.sublime-workspace
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn-debug.log
+pnpm-debug.log
+
+# Build outputs
+dist/
+build/
+*.tgz
+.tmp/
+.cache/
+
+# Local secrets (NEVER commit)
+*.pem
+*.key
+.keys/
+.env
+.env.local
+.env.*.local
+
+# WeChat-specific
+_preview/
+miniprogram_npm/
