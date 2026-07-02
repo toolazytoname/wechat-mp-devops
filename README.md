@@ -35,6 +35,7 @@
 | workflow paths filter 漏了 lockfile，lockfile 改了 CI 不跑 | paths filter 加 `pnpm-lock.yaml` |
 | 体验版 QR 扫码提示"小程序尚未发布" | getwxacodeunlimit 要求"已发布"，不是"体验版" |
 | 在无 admin auth 情况下 debug GitHub Actions step log | `actions/github-script@v7` 创建 issue |
+| **不想下载图片，log 直接扫码** | **Unicode block QR 渲染到 log** → 见 `qr-to-log.md` |
 
 ## 起源
 
