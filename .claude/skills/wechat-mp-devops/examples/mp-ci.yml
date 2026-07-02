@@ -1,0 +1,129 @@
+# 完整 GitHub Actions workflow 示例
+# 用法：复制到你的项目 .github/workflows/mp-ci.yml
+# 需要的 GitHub Secrets: WX_APPID, WX_PRIVATE_KEY, WX_APP_SECRET（可选，见注释）
+
+name: MP CI
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'apps/mp/**'
+      - '.github/workflows/mp-ci.yml'
+      - 'pnpm-lock.yaml'
+  workflow_dispatch:
+
+# 只有启用 experience QR step 才需要
+# permissions:
+#   issues: write
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        run: npm install -g pnpm@9
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Install MP deps
+        working-directory: apps/mp
+        run: npm install --no-audit --no-fund
+
+      # ====== 路径 1: miniprogram-ci preview（不需要 AppSecret）======
+      # build + upload + dev preview QR（30 分钟有效，未发布也能用）
+      - name: Build + upload + dev preview QR
+        if: always()
+        working-directory: apps/mp
+        env:
+          WX_APPID: ${{ secrets.WX_APPID }}
+          WX_PRIVATE_KEY: ${{ secrets.WX_PRIVATE_KEY }}
+        run: |
+          set -e
+          mkdir -p .keys
+          printf '%s' "$WX_PRIVATE_KEY" > .keys/wx.pem
+          chmod 600 .keys/wx.pem
+          ./node_modules/.bin/miniprogram-ci preview \
+            --appid "$WX_APPID" \
+            --pkp ./.keys/wx.pem \
+            --pp ./ \
+            --uv 1 --rv 1 \
+            --enable-es6 true --enable-es7 true \
+            --enable-minifyWXSS true --enable-minifyWXML true --enable-minifyJS true \
+            --enable-qrcode \
+            --qrcode-format image \
+            --qrcode-output-dest ./qrcode.png
+          file qrcode.png
+          rm -f .keys/wx.pem
+
+      - name: Upload dev preview QR
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp-qrcode
+          path: apps/mp/qrcode.png
+          if-no-files-found: warn
+
+      # ====== 路径 2: 体验版 QR（需要 AppSecret + 小程序已发布）======
+      # 把下面整段取消注释启用
+      # - name: Generate experience QR (long-lived)
+      #   if: always()
+      #   working-directory: apps/mp
+      #   env:
+      #     WX_APPID: ${{ secrets.WX_APPID }}
+      #     WX_APP_SECRET: ${{ secrets.WX_APP_SECRET }}
+      #   run: |
+      #     echo "→ 获取 access_token..."
+      #     TOKEN_RESP=$(curl -sS --max-time 15 "https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=$WX_APPID&secret=$WX_APP_SECRET")
+      #     ACCESS_TOKEN=$(printf '%s' "$TOKEN_RESP" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("access_token"); print(v if v else "")')
+      #     if [ -z "$ACCESS_TOKEN" ]; then
+      #       echo "❌ access_token 取不到: $TOKEN_RESP"
+      #       exit 0
+      #     fi
+      #     echo "→ token OK (len=${#ACCESS_TOKEN})"
+      #     # ⚠️ getwxacodeunlimit access_token 必须在 URL query，不在 body
+      #     curl -sS --max-time 15 -X POST \
+      #       "https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=${ACCESS_TOKEN}" \
+      #       -H "Content-Type: application/json" \
+      #       -d '{"scene":"dev","path":"pages/matrix/matrix","width":430}' \
+      #       -o experience-qrcode.bin
+      #     FIRST2=$(head -c 2 experience-qrcode.bin | od -An -tx1 | tr -d ' \n')
+      #     FIRST4=$(head -c 4 experience-qrcode.bin | od -An -tx1 | tr -d ' \n')
+      #     SIZE=$(stat -c%s experience-qrcode.bin)
+      #     echo "→ experience QR: $SIZE bytes, first2=$FIRST2 first4=$FIRST4"
+      #     if [ "$FIRST2" = "ffd8" ]; then
+      #       mv experience-qrcode.bin experience-qrcode.jpg
+      #     elif [ "$FIRST4" = "89504e47" ]; then
+      #       mv experience-qrcode.bin experience-qrcode.png
+      #     else
+      #       echo "❌ not image: $(head -c 200 experience-qrcode.bin)"
+      #       exit 0
+      #     fi
+      #
+      # - name: Upload experience QR
+      #   if: always()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: mp-experience-qrcode
+      #     path: |
+      #       apps/mp/experience-qrcode.png
+      #       apps/mp/experience-qrcode.jpg
+      #     if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "✅ MP CI run finished"
+          echo ""
+          echo "📱 dev preview QR：artifact 'mp-qrcode' (30 分钟内有效)"
+          echo "⏰ 过期时间：$(date -u -d '+30 minutes' '+%H:%M:%S UTC')"
