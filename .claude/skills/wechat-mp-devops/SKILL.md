@@ -67,7 +67,8 @@ metadata:
 | `references/wechat-qr-api.md` | getwxacodeunlimit vs unlimit、access_token 位置、errcode 速查 |
 | `references/cicd-pitfalls.md` | 8 个常见 workflow 坑（lockfile drift / paths filter / YAML alias / 等）|
 | `references/debug-tips.md` | 在无 admin auth 限制下 debug GitHub Actions step log 的 5+ 种方法 |
-| `examples/mp-ci.yml` | 完整可用的 workflow（含体验版 QR，可直接用） |
+| `references/qr-to-log.md` | 把 QR code 渲染成 ASCII 字符到 CI log，**不用下载图片直接扫码** |
+| `examples/mp-ci.yml` | 完整可用的 workflow（含体验版 QR + ASCII log 渲染，可直接用） |
 
 ## 速查：errcode
 

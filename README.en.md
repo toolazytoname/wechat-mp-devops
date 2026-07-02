@@ -18,6 +18,7 @@ Hard-won lessons from automating WeChat MiniProgram builds, uploads, and QR-code
 | workflow `paths` filter misses `pnpm-lock.yaml` | Add `pnpm-lock.yaml` to filter list |
 | Experience QR says "MiniProgram not yet published" | `getwxacodeunlimit` requires "已发布" (officially published), not just "体验版" (experience) |
 | Debug GitHub Actions step log without admin auth | `actions/github-script@v7` + create issue |
+| **Want to scan QR without downloading the image** | **ASCII QR rendered to log** via Unicode block — see `qr-to-log.md` |
 
 ## Repository structure
 
