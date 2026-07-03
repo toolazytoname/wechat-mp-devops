@@ -1,6 +1,10 @@
 # 完整 GitHub Actions workflow 示例
 # 用法：复制到你的项目 .github/workflows/mp-ci.yml
-# 需要的 GitHub Secrets: WX_APPID, WX_PRIVATE_KEY, WX_APP_SECRET（可选，见注释）
+# 需要的 GitHub Secrets: WX_APPID, WX_PRIVATE_KEY, WX_APP_SECRET,
+#                        CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+#
+# 输出链接: https://<project>.pages.dev/mp-qrcode/
+# 同页面显示: Dev preview QR (30 分钟) + Experience QR (长期)
 
 name: MP CI
 
@@ -12,10 +16,6 @@ on:
       - '.github/workflows/mp-ci.yml'
       - 'pnpm-lock.yaml'
   workflow_dispatch:
-
-# 只有启用 experience QR step 才需要
-# permissions:
-#   issues: write
 
 jobs:
   build-and-upload:
@@ -36,17 +36,18 @@ jobs:
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
-      - name: Install MP deps
+      - name: Install MP deps (miniprogram-ci)
         working-directory: apps/mp
         run: npm install --no-audit --no-fund
 
-      # ====== 路径 1: miniprogram-ci preview（不需要 AppSecret）======
-      # build + upload + dev preview QR（30 分钟有效，未发布也能用）
+      # ====== 路径 1: miniprogram-ci preview (不需要 AppSecret) ======
+      # build + upload + dev preview QR (30 分钟有效，未发布也能用)
       - name: Build + upload + dev preview QR
         if: always()
         working-directory: apps/mp
         env:
           WX_APPID: ${{ secrets.WX_APPID }}
+          # 必须是 PEM 格式的 RSA 私钥
           WX_PRIVATE_KEY: ${{ secrets.WX_PRIVATE_KEY }}
         run: |
           set -e
@@ -66,7 +67,7 @@ jobs:
           file qrcode.png
           rm -f .keys/wx.pem
 
-      - name: Upload dev preview QR
+      - name: Upload dev preview QR as artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -74,10 +75,8 @@ jobs:
           path: apps/mp/qrcode.png
           if-no-files-found: warn
 
-      # ====== 渲染 ASCII QR 到 log（不用下载图片，直接打开 log 扫码）======
-      # 用 Unicode block 字符（▀▄█）把 PNG 转成 monospace 文本 QR
-      # GitHub Actions log 用 monospace 字体渲染，扫码可用
-      - name: Render QR to log (Unicode block)
+      # ====== 路径 2: 生成 HTML 页面 (base64 embed QR + UTC+8 时间戳) ======
+      - name: Generate HTML QR (base64 embed PNG)
         if: always()
         working-directory: apps/mp
         run: |
@@ -85,79 +84,140 @@ jobs:
             echo "(qrcode.png not found, skip)"
             exit 0
           fi
-          python3 -m pip install --quiet --break-system-packages Pillow 2>&1 | tail -2
           python3 << 'EOF'
-          from PIL import Image
-          img = Image.open('qrcode.png').convert('1')
-          target = 60  # log 里显示宽度（字符数）
-          w, h = img.size
-          scale = max(1, max(w, h) // target)
-          img = img.resize((max(1, w // scale), max(1, h // scale)))
-          w, h = img.size
-          print(f"\n>>> dev preview QR (PNG: {w*scale}x{h*scale}, log 中扫码用) <<<\n")
-          for y in range(0, h, 2):
-              line = ''
-              for x in range(w):
-                  top = img.getpixel((x, y))
-                  bottom = img.getpixel((x, y+1)) if y+1 < h else 0
-                  if top and bottom: line += '██'
-                  elif top: line += '▀▀'
-                  elif bottom: line += '▄▄'
-                  else: line += '  '
-              print(line)
-          print(f"\n>>> 扫码后进 dev preview，30 分钟内有效 <<<\n")
+          import base64
+          from datetime import datetime, timedelta, timezone
+          tz_beijing = timezone(timedelta(hours=8))
+          now = datetime.now(tz_beijing)
+          exp = now + timedelta(minutes=30)
+          ts_now = now.strftime('%Y-%m-%d %H:%M:%S')
+          ts_exp = exp.strftime('%Y-%m-%d %H:%M:%S')
+          with open('qrcode.png', 'rb') as f:
+              img_b64 = base64.b64encode(f.read()).decode('ascii')
+          html = (
+              '<!DOCTYPE html><html><head><meta charset=utf-8>'
+              '<title>GridGo QR</title>'
+              '<style>body{font-family:sans-serif;background:#fafafa;margin:0;padding:24px;text-align:center}'
+              '.card{max-width:380px;margin:0 auto;background:white;border-radius:16px;padding:32px;box-shadow:0 4px 20px rgba(0,0,0,.08)}'
+              'h1{color:#3b6df6;margin:0 0 8px}'
+              'h2{color:#1a1a1a;margin:24px 0 8px;font-size:18px;border-top:1px solid #eee;padding-top:24px}'
+              '.ts{background:#f3f4f6;border-radius:8px;padding:12px;margin:16px 0;font-size:13px;color:#374151;text-align:left}'
+              '.qr{padding:16px;display:inline-block}'
+              '.qr img{display:block;width:280px;height:280px}'
+              'p{color:#7a7a82;font-size:13px}'
+              '</style></head><body><div class=card>'
+              '<h1>格行 GridGo</h1>'
+              '<div class=ts>生成（UTC+8 北京）: ' + ts_now + '<br>过期（UTC+8 北京）: ' + ts_exp + '</div>'
+              '<h2>Dev preview · 30 分钟有效</h2>'
+              '<div class=qr><img src="data:image/png;base64,' + img_b64 + '"></div>'
+              '<p>开发者本地扫码测试</p>'
+              '<div id=experience-slot></div>'
+              '</div></body></html>'
+          )
+          with open('qrcode.html', 'w', encoding='utf-8') as f:
+              f.write(html)
+          print('qrcode.html: ' + str(len(html)) + ' bytes (base64 ' + str(len(img_b64)) + ' bytes)')
           EOF
 
-      # ====== 路径 2: 体验版 QR（需要 AppSecret + 小程序已发布）======
-      # 把下面整段取消注释启用
-      # - name: Generate experience QR (long-lived)
-      #   if: always()
-      #   working-directory: apps/mp
-      #   env:
-      #     WX_APPID: ${{ secrets.WX_APPID }}
-      #     WX_APP_SECRET: ${{ secrets.WX_APP_SECRET }}
-      #   run: |
-      #     echo "→ 获取 access_token..."
-      #     TOKEN_RESP=$(curl -sS --max-time 15 "https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=$WX_APPID&secret=$WX_APP_SECRET")
-      #     ACCESS_TOKEN=$(printf '%s' "$TOKEN_RESP" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("access_token"); print(v if v else "")')
-      #     if [ -z "$ACCESS_TOKEN" ]; then
-      #       echo "❌ access_token 取不到: $TOKEN_RESP"
-      #       exit 0
-      #     fi
-      #     echo "→ token OK (len=${#ACCESS_TOKEN})"
-      #     # ⚠️ getwxacodeunlimit access_token 必须在 URL query，不在 body
-      #     curl -sS --max-time 15 -X POST \
-      #       "https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=${ACCESS_TOKEN}" \
-      #       -H "Content-Type: application/json" \
-      #       -d '{"scene":"dev","path":"pages/matrix/matrix","width":430}' \
-      #       -o experience-qrcode.bin
-      #     FIRST2=$(head -c 2 experience-qrcode.bin | od -An -tx1 | tr -d ' \n')
-      #     FIRST4=$(head -c 4 experience-qrcode.bin | od -An -tx1 | tr -d ' \n')
-      #     SIZE=$(stat -c%s experience-qrcode.bin)
-      #     echo "→ experience QR: $SIZE bytes, first2=$FIRST2 first4=$FIRST4"
-      #     if [ "$FIRST2" = "ffd8" ]; then
-      #       mv experience-qrcode.bin experience-qrcode.jpg
-      #     elif [ "$FIRST4" = "89504e47" ]; then
-      #       mv experience-qrcode.bin experience-qrcode.png
-      #     else
-      #       echo "❌ not image: $(head -c 200 experience-qrcode.bin)"
-      #       exit 0
-      #     fi
-      #
-      # - name: Upload experience QR
-      #   if: always()
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: mp-experience-qrcode
-      #     path: |
-      #       apps/mp/experience-qrcode.png
-      #       apps/mp/experience-qrcode.jpg
-      #     if-no-files-found: warn
+      # ====== 路径 3: 体验版 QR (长期有效) — 追加到同页面 ======
+      # 注意: 要求小程序已发布。未发布时 step exit 0, 跳过
+      - name: Generate experience QR (long-lived)
+        if: always()
+        working-directory: apps/mp
+        env:
+          WX_APPID: ${{ secrets.WX_APPID }}
+          # AppSecret (32 位 hex) — 必须是**小程序**的（不是公众号/服务号）
+          WX_APP_SECRET: ${{ secrets.WX_APP_SECRET }}
+        run: |
+          set +e
+          TOKEN_RESP=$(curl -sS --max-time 15 "https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=$WX_APPID&secret=$WX_APP_SECRET")
+          ACCESS_TOKEN=$(printf '%s' "$TOKEN_RESP" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("access_token"); print(v if v else "")')
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "❌ access_token 取不到: $TOKEN_RESP"
+            exit 0
+          fi
+          # access_token 必须在 URL query (老 API)
+          curl -sS --max-time 15 -X POST \
+            "https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=${ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"scene":"dev","path":"pages/matrix/matrix","width":430}' \
+            -o experience-qrcode.bin
+          FIRST2=$(head -c 2 experience-qrcode.bin 2>/dev/null | od -An -tx1 | tr -d ' \n')
+          FIRST4=$(head -c 4 experience-qrcode.bin 2>/dev/null | od -An -tx1 | tr -d ' \n')
+          if [ "$FIRST2" = "ffd8" ]; then
+            mv experience-qrcode.bin experience-qrcode.jpg
+            EXT="jpg"
+          elif [ "$FIRST4" = "89504e47" ]; then
+            mv experience-qrcode.bin experience-qrcode.png
+            EXT="png"
+          else
+            echo "❌ not image (小程序可能未发布): $(head -c 200 experience-qrcode.bin)"
+            exit 0
+          fi
+          export EXT
+          python3 << 'PYEOF'
+          import base64, os
+          ext = os.environ.get('EXT', 'png')
+          with open('qrcode.html', 'r', encoding='utf-8') as f:
+              html = f.read()
+          with open('experience-qrcode.' + ext, 'rb') as f:
+              exp_b64 = base64.b64encode(f.read()).decode('ascii')
+          exp_block = (
+              '<h2>Experience · 长期有效</h2>'
+              '<div class=qr><img src="data:image/' + ext + ';base64,' + exp_b64 + '"></div>'
+              '<p>团队成员扫码进体验版<br>需先在 mp.weixin.qq.com 发布 + 成员管理添加</p>'
+          )
+          slot = '<div id=experience-slot></div>'
+          if slot in html:
+              html = html.replace(slot, exp_block)
+          else:
+              html = html.replace('</div></body>', exp_block + '</div></body>')
+          with open('qrcode.html', 'w', encoding='utf-8') as f:
+              f.write(html)
+          print('appended experience QR to qrcode.html')
+          PYEOF
+
+      # ====== 路径 4: 部署到 Cloudflare Pages (永久链接) ======
+      # 需要 GitHub Secrets: CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID
+      - name: Ensure Cloudflare Pages project exists
+        if: always()
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler pages project create gridgo-mp-qr --production-branch=main 2>&1 | tail -10 || echo "(project may already exist)"
+
+      - name: Deploy QR to Cloudflare Pages
+        if: always()
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ ! -f apps/mp/qrcode.html ]; then
+            echo "(no qrcode.html, skip)"
+            exit 0
+          fi
+          DEPLOY_DIR=$(mktemp -d)
+          mkdir -p "$DEPLOY_DIR/mp-qrcode"
+          cp apps/mp/qrcode.html "$DEPLOY_DIR/mp-qrcode/index.html"
+          cp apps/mp/qrcode.png "$DEPLOY_DIR/mp-qrcode/qrcode.png"
+          [ -f apps/mp/experience-qrcode.jpg ] && cp apps/mp/experience-qrcode.jpg "$DEPLOY_DIR/mp-qrcode/"
+          [ -f apps/mp/experience-qrcode.png ] && cp apps/mp/experience-qrcode.png "$DEPLOY_DIR/mp-qrcode/"
+          printf '%s' '<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=mp-qrcode/"></head><body></body></html>' > "$DEPLOY_DIR/index.html"
+          cd "$DEPLOY_DIR"
+          npx wrangler pages deploy . --project-name=gridgo-mp-qr --commit-dirty=true 2>&1 | tail -10
+          if [ $? = "0" ]; then
+            echo ""
+            echo "📱 扫码链接：https://gridgo-mp-qr.pages.dev/mp-qrcode/"
+          fi
 
       - name: Summary
         if: always()
         run: |
           echo "✅ MP CI run finished"
           echo ""
-          echo "📱 dev preview QR：artifact 'mp-qrcode' (30 分钟内有效)"
-          echo "⏰ 过期时间：$(date -u -d '+30 minutes' '+%H:%M:%S UTC')"
+          echo "📱 Dev preview QR: artifact 'mp-qrcode' (30 分钟内有效)"
+          echo "☁️  Cloudflare Pages 永久链接:"
+          echo "   https://gridgo-mp-qr.pages.dev/mp-qrcode/"
+          echo ""
+          echo "⏰ dev preview QR 过期时间（UTC+8 北京）: $(TZ=Asia/Shanghai date -d '+30 minutes' '+%H:%M:%S')"

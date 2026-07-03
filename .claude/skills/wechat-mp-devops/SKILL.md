@@ -31,6 +31,7 @@ metadata:
    - **`getwxacodeunlimit`（取 QR）→ 必须在 URL query**，body 里会被报 `41001 missing`
 4. **`getwxacodeunlimit` 实际返 JPEG**（FFD8FFE0），**不是 PNG**。判定头 2 字节 `ffd8` = JPEG
 5. **`getwxacodeunlimit` 要求小程序"已发布"**，"体验版"不算。dev preview QR（`miniprogram-ci preview`）不需要发布
+6. **QR 显示方案**：base64 embed PNG 到 HTML → 部署到 Cloudflare Pages → 永久链接 `https://xxx.pages.dev/`。**不要**用 GitHub Pages（personal blog 冲突）/ jsDelivr（nosniff 强制 text/plain）/ ASCII QR to log（monospace 字体 char aspect 不可控）
 
 ## 推荐 workflow 路径
 
@@ -67,8 +68,8 @@ metadata:
 | `references/wechat-qr-api.md` | getwxacodeunlimit vs unlimit、access_token 位置、errcode 速查 |
 | `references/cicd-pitfalls.md` | 8 个常见 workflow 坑（lockfile drift / paths filter / YAML alias / 等）|
 | `references/debug-tips.md` | 在无 admin auth 限制下 debug GitHub Actions step log 的 5+ 种方法 |
-| `references/qr-to-log.md` | 把 QR code 渲染成 ASCII 字符到 CI log，**不用下载图片直接扫码** |
-| `examples/mp-ci.yml` | 完整可用的 workflow（含体验版 QR + ASCII log 渲染，可直接用） |
+| `references/qr-page.md` | base64 embed QR 到 HTML，部署到 Cloudflare Pages，永久链接 + UTC+8 时间戳 |
+| `examples/mp-ci.yml` | 完整可用的 workflow（dev preview + experience QR + Cloudflare Pages，可直接用） |
 
 ## 速查：errcode
 
