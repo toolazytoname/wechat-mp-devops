@@ -1,8 +1,8 @@
 # wechat-mp-devops
 
-> WeChat MiniProgram (微信小程序) CI/CD & DevOps Playbook for Linux
+> WeChat MiniProgram (微信小程序) CI/CD & DevOps Playbook — Linux (GitHub Actions) + macOS (local dev)
 
-Hard-won lessons from automating WeChat MiniProgram builds, uploads, and QR-code generation on Linux/CI — distilled into a Claude Code skill, **reusable for any WeChat MP project**.
+Hard-won lessons from automating WeChat MiniProgram builds, uploads, and QR-code generation — distilled into a Claude Code skill, **reusable for any WeChat MP project**.
 
 🇨🇳 [中文文档](./README.md) | 🇬🇧 **English**
 
@@ -11,6 +11,7 @@ Hard-won lessons from automating WeChat MiniProgram builds, uploads, and QR-code
 | Problem | How |
 |---|---|
 | Auto-build + auto-upload WeChat MP on Linux/CI | `miniprogram-ci preview` does it all in one command |
+| **One-shot preview on macOS local dev** | **`bin/mp-preview.sh`** (loads `.env.local`, generates QR, `open` Preview.app) — see `macos-setup.md` |
 | Confuse `WX_PRIVATE_KEY` (PEM) with `WX_APP_SECRET` (32-char hex) | See `references/secrets.md` |
 | `getwxacodeunlimit` returns `41001 access_token missing` | access_token MUST be in URL query, **not body** |
 | `getwxacodeunlimit` actually returns JPEG, not PNG | Check first 2 bytes for `ffd8` magic |
@@ -18,7 +19,7 @@ Hard-won lessons from automating WeChat MiniProgram builds, uploads, and QR-code
 | workflow `paths` filter misses `pnpm-lock.yaml` | Add `pnpm-lock.yaml` to filter list |
 | Experience QR says "MiniProgram not yet published" | `getwxacodeunlimit` requires "已发布" (officially published), not just "体验版" (experience) |
 | Debug GitHub Actions step log without admin auth | `actions/github-script@v7` + create issue |
-| **Want to scan QR without downloading the image** | **ASCII QR rendered to log** via Unicode block — see `qr-to-log.md` |
+| **Want to scan QR without downloading the image** | **HTML deployed to Cloudflare Pages** — see `qr-page.md` |
 
 ## Repository structure
 
@@ -42,9 +43,12 @@ Hard-won lessons from automating WeChat MiniProgram builds, uploads, and QR-code
             │   ├── miniprogram-ci.md      # miniprogram-ci API reference
             │   ├── wechat-qr-api.md       # getwxacodeunlimit + access_token position
             │   ├── cicd-pitfalls.md       # 8 common workflow gotchas
-            │   └── debug-tips.md          # Debug GitHub Actions without admin auth
+            │   ├── debug-tips.md          # Debug GitHub Actions without admin auth
+            │   ├── qr-page.md             # base64 embed QR to HTML + Cloudflare Pages
+            │   └── macos-setup.md         # macOS local dev (brew / zsh / APFS / Apple Silicon)
             └── examples/
-                └── mp-ci.yml              # Complete ready-to-use workflow
+                ├── mp-ci.yml              # Complete ready-to-use GitHub Actions workflow
+                └── local-mac-dev.sh       # macOS local one-shot script (reads .env.local + opens QR)
 ```
 
 ## Quick start
@@ -66,6 +70,27 @@ Then in Claude Code, say "use wechat-mp-devops skill to do X" — the skill load
 ### Use the example workflow
 
 Copy `.claude/skills/wechat-mp-devops/examples/mp-ci.yml` to your project's `.github/workflows/mp-ci.yml`. See file for required GitHub Secrets.
+
+### macOS local dev
+
+```bash
+# 1. Copy the local script
+cp .claude/skills/wechat-mp-devops/examples/local-mac-dev.sh bin/mp-preview.sh
+chmod +x bin/mp-preview.sh
+
+# 2. Prepare secrets (do not commit)
+cat > .env.local <<'EOF'
+WX_APPID=wxREPLACE_WITH_YOUR_APPID
+WX_APP_SECRET=REPLACE_WITH_YOUR_32_CHAR_HEX_SECRET
+WX_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
+REPLACE_WITH_YOUR_PEM_BODY
+-----END RSA PRIVATE KEY-----"
+EOF
+echo ".env.local" >> .gitignore
+
+# 3. One-shot preview
+./bin/mp-preview.sh   # builds + uploads + generates QR + opens Preview.app
+```
 
 ## Cheat sheet: 5 things to remember
 
@@ -96,6 +121,7 @@ Copy `.claude/skills/wechat-mp-devops/examples/mp-ci.yml` to your project's `.gi
 - `pnpm >= 9` (recommended) — monorepo-friendly
 - `node >= 20`
 - GitHub Actions (recommended) — also works with GitLab CI / self-hosted runners
+- **macOS local dev** (optional) — macOS 12+ / Apple Silicon natively supported, see `macos-setup.md`
 
 ## Origin
 

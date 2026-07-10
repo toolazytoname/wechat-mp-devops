@@ -1,7 +1,8 @@
 ---
 name: wechat-mp-devops
 description: |
-  微信小程序（WeChat MiniProgram）的 Linux 端 CI/CD 与 DevOps 实战手册。
+  微信小程序（WeChat MiniProgram）的 CI/CD 与 DevOps 实战手册。
+  支持 Linux（GitHub Actions）+ macOS（本地开发）。
   覆盖：miniprogram-ci 用法、private key / AppSecret 区分、access_token 位置、QR API、workflow 坑、debug 技巧。
   当用户提到微信小程序自动发布、miniprogram-ci、mp-ci、WeChat QR code、getwxacodeunlimit、access_token missing 等场景时触发。
 metadata:
@@ -15,7 +16,8 @@ metadata:
 
 用户在以下场景**应该**触发本 skill：
 
-- 在 Linux/CI 上**自动 build / upload** 微信小程序
+- 在 Linux/GitHub Actions 上**自动 build / upload** 微信小程序
+- 在 macOS 本地**一键 preview + 扫码测试**微信小程序
 - 配置 GitHub Actions `.github/workflows/mp-ci.yml` 或类似 CI
 - 区分 `WX_PRIVATE_KEY`（PEM）和 `WX_APP_SECRET`（32位 hex）这两种 key
 - 调 `getwxacodeunlimit` / `cgi-bin/token` 等 WeChat API
@@ -34,6 +36,8 @@ metadata:
 6. **QR 显示方案**：base64 embed PNG 到 HTML → 部署到 Cloudflare Pages → 永久链接 `https://xxx.pages.dev/`。**不要**用 GitHub Pages（personal blog 冲突）/ jsDelivr（nosniff 强制 text/plain）/ ASCII QR to log（monospace 字体 char aspect 不可控）
 
 ## 推荐 workflow 路径
+
+### Linux / GitHub Actions
 
 ```yaml
 # 最稳的 6 step 路径（不需要 AppSecret）
@@ -57,6 +61,16 @@ metadata:
   with: { name: mp-qrcode, path: apps/mp/qrcode.png }
 ```
 
+### macOS 本地开发
+
+```bash
+# 一键：build + upload + 生成 QR + 在 Preview.app 打开
+cp .claude/skills/wechat-mp-devops/examples/local-mac-dev.sh bin/mp-preview.sh
+chmod +x bin/mp-preview.sh
+```
+
+→ 详见 `references/macos-setup.md`（brew 装依赖、zsh/bash 差异、APFS case-insensitive 陷阱、HTTP_PROXY 处理、Apple Silicon 注意）
+
 `miniprogram-ci preview` 一条命令完成 build + upload + 生成 dev preview QR。
 
 ## 完整内容索引
@@ -69,7 +83,9 @@ metadata:
 | `references/cicd-pitfalls.md` | 8 个常见 workflow 坑（lockfile drift / paths filter / YAML alias / 等）|
 | `references/debug-tips.md` | 在无 admin auth 限制下 debug GitHub Actions step log 的 5+ 种方法 |
 | `references/qr-page.md` | base64 embed QR 到 HTML，部署到 Cloudflare Pages，永久链接 + UTC+8 时间戳 |
-| `examples/mp-ci.yml` | 完整可用的 workflow（dev preview + experience QR + Cloudflare Pages，可直接用） |
+| `references/macos-setup.md` | **macOS 本地开发适配**（brew、zsh、APFS、HTTP_PROXY、Apple Silicon、本地 secrets） |
+| `examples/mp-ci.yml` | 完整可用的 GitHub Actions workflow（dev preview + experience QR + Cloudflare Pages，可直接用） |
+| `examples/local-mac-dev.sh` | **macOS 本地一键脚本**（读 .env.local、写 PEM、preview、`open` QR） |
 
 ## 速查：errcode
 
