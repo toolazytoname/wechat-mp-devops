@@ -4,9 +4,9 @@
 # 用法:
 #   1. 复制到项目 bin/mp-preview.sh，chmod +x
 #   2. 项目根目录准备 .env.local，含 WX_APPID / WX_PRIVATE_KEY / WX_APP_SECRET
-#   3. ./bin/mp-preview.sh                  # 默认 apps/mp 子项目
-#      ./bin/mp-preview.sh apps/foo         # 指定子项目
-#      ./bin/mp-preview.sh --no-open         # 不自动打开
+#   3. ./bin/mp-preview.sh                  # 默认 .（项目根就是 mp 项目）
+#      ./bin/mp-preview.sh apps/foo         # 指定 mp 子项目（monorepo 用）
+#      ./bin/mp-preview.sh --no-open        # 不自动打开
 #      ./bin/mp-preview.sh --qr-only        # 只生成 QR（不重新 build）
 #
 # 跟 CI workflow (examples/mp-ci.yml) 的区别:
@@ -17,7 +17,9 @@
 set -euo pipefail
 
 # ---------- 参数解析 ----------
-MP_DIR="apps/mp"
+# 默认 MP_DIR=.（项目根当 mp 项目根），常见场景：扁平项目
+# monorepo 用户传 apps/mp
+MP_DIR="."
 NO_OPEN=0
 QR_ONLY=0
 
@@ -34,9 +36,33 @@ done
 
 # ---------- 路径解析 ----------
 # 脚本可能在 bin/ 下，回退到项目根
+# PROJECT_ROOT = .git 所在的目录（canonical root），找不到退回 .env.local 父级
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ "$SCRIPT_DIR" == */bin ]]; then
-  PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# 从 SCRIPT_DIR 一路向上找
+find_project_root() {
+  local dir="$1"
+  local env_candidate=""
+  while [[ "$dir" != "/" ]]; do
+    if [[ -d "$dir/.git" ]]; then
+      echo "$dir"
+      return 0
+    fi
+    # 每次都更新 env_candidate（走到最远的 .env.local / package.json 父级）
+    if [[ -f "$dir/.env.local" ]] || [[ -f "$dir/package.json" ]]; then
+      env_candidate="$dir"
+    fi
+    dir="$(dirname "$dir")"
+  done
+  if [[ -n "$env_candidate" ]]; then
+    echo "$env_candidate"
+    return 0
+  fi
+  return 1
+}
+
+if PROJECT_ROOT="$(find_project_root "$SCRIPT_DIR")"; then
+  :
 else
   PROJECT_ROOT="$SCRIPT_DIR"
 fi
@@ -44,6 +70,15 @@ fi
 cd "$PROJECT_ROOT"
 echo "📁 project root: $PROJECT_ROOT"
 echo "📦 mp dir:       $MP_DIR"
+
+# ---------- MP dir 校验 ----------
+if [[ ! -d "$MP_DIR" ]]; then
+  echo "❌ MP dir 不存在: $PROJECT_ROOT/$MP_DIR"
+  echo "   当前调用: $0 $MP_DIR"
+  echo "   单层项目: ./bin/mp-preview.sh            # 默认 MP_DIR=."
+  echo "   monorepo:  ./bin/mp-preview.sh apps/mp   # 传相对路径"
+  exit 1
+fi
 
 # ---------- 加载 .env.local ----------
 ENV_FILE="$PROJECT_ROOT/.env.local"
